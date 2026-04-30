@@ -1201,29 +1201,39 @@ async function runImport() {
   document.getElementById('step2').classList.add('done');
   document.getElementById('step3').classList.add('active');
 
-  try {
+try {
     const res = await fetch(FLOW_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookings: allRows })
     });
-    const data = await res.json();
+    
     hideLoading();
+    
     if (res.ok) {
-      showResult(true,
-        `Import complete`,
-        `<span>${data.imported || allRows.length}</span> imported · <span>${data.skipped || 0}</span> skipped · <span>${data.errors || 0}</span> errors`
-      );
+      try {
+        const data = await res.json();
+        showResult(true,
+          'Import complete',
+          `<span>${data.imported || allRows.length}</span> imported · <span>${data.skipped || 0}</span> skipped · <span>${data.errors || 0}</span> errors`
+        );
+      } catch {
+        // Flow succeeded but timed out before sending response
+        showResult(true,
+          'Import submitted successfully',
+          `<span>${allRows.length}</span> bookings sent · Return to Power Apps and refresh in 60 seconds to verify`
+        );
+      }
       document.getElementById('step3').classList.add('done');
       setStatus('Import complete', true);
     } else {
+      const data = await res.json().catch(() => ({}));
       showResult(false, 'Import failed', data.message || 'The flow returned an error. Check Power Automate run history.');
     }
   } catch(err) {
     hideLoading();
     showResult(false, 'Connection error', err.message);
   }
-}
 
 // ── HELPERS ──
 function showLoading(msg) {
