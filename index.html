@@ -1112,7 +1112,14 @@ function parseFile(file) {
         const access    = cleanField(row[iAccess]);
 
         rows.push({
-          BookingName:         String(row[iClient] || '').trim(),
+          BookingName: (() => {
+              const raw = String(row[iClient] || '').trim();
+              const commaIdx = raw.indexOf(',');
+              if (commaIdx === -1) return raw;
+              const surname   = raw.slice(0, commaIdx).trim();
+              const firstname = raw.slice(commaIdx + 1).trim();
+              return firstname + ' ' + surname;
+            })(),
           SpaceName:           spaceName,
           Covers:              parseInt(row[iQuantity]) || 0,
           HasDietary:          isPositive(row[iDietary]),
