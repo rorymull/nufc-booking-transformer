@@ -341,7 +341,7 @@
   /* ── STATS STRIP ── */
   .stats-strip {
     display: none;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 12px;
     margin-bottom: 32px;
   }
@@ -648,6 +648,41 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--grey-3); border-radius: 3px; }
 
+  /* ── MERGE SUMMARY ── */
+  .merge-summary {
+    display: none;
+    padding: 14px 18px;
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--amber);
+    font-family: var(--font-mono);
+  }
+  .merge-summary.show { display: block; }
+  .merge-summary strong { color: #FDE68A; }
+
+  .merge-badge {
+    display: inline-block;
+    background: var(--amber);
+    color: #412402;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    margin-left: 8px;
+    font-family: var(--font-mono);
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  tbody tr.merged-row {
+    background: rgba(245,158,11,0.07);
+    border-left: 3px solid var(--amber);
+  }
+  tbody tr.merged-row:hover { background: rgba(245,158,11,0.12); }
+
   /* ── UNMAPPED ALERT ── */
   .unmapped-alert {
     display: none;
@@ -761,6 +796,7 @@
   </div>
 
   <!-- Unmapped alert -->
+  <div class="merge-summary" id="mergeSummary"></div>
   <div class="unmapped-alert" id="unmappedAlert"></div>
 
   <!-- Stats -->
@@ -784,6 +820,10 @@
     <div class="stat-card accent-blue">
       <div class="stat-label">Accessibility</div>
       <div class="stat-value" id="statAccess">–</div>
+    </div>
+    <div class="stat-card accent-amber">
+      <div class="stat-label">Merged</div>
+      <div class="stat-value" id="statMerged">–</div>
     </div>
   </div>
 
@@ -937,6 +977,51 @@ function cleanField(val) {
 
 function isPositive(val) { return cleanField(val) !== ''; }
 
+// ── DEDUPLICATION ──
+function deduplicateBookings(rows) {
+  const map = new Map();
+
+  rows.forEach(row => {
+    const key = [
+      row.BookingName.trim().toLowerCase(),
+      row.SpaceName.trim().toLowerCase()
+    ].join('|');
+
+    if (map.has(key)) {
+      const existing = map.get(key);
+
+      // Add covers together
+      existing.Covers += row.Covers;
+
+      // Merge dietary — OR the flags, concatenate notes
+      if (row.HasDietary) {
+        existing.HasDietary = true;
+        existing.DietaryRequirements = [
+          existing.DietaryRequirements,
+          row.DietaryRequirements
+        ].filter(Boolean).join('; ');
+      }
+
+      // Merge accessibility — same pattern
+      if (row.HasAccessibility) {
+        existing.HasAccessibility = true;
+        existing.AccessibilityNeeds = [
+          existing.AccessibilityNeeds,
+          row.AccessibilityNeeds
+        ].filter(Boolean).join('; ');
+      }
+
+      existing._merged = true;
+      existing._mergeCount = (existing._mergeCount || 1) + 1;
+
+    } else {
+      map.set(key, Object.assign({}, row, { _merged: false, _mergeCount: 1 }));
+    }
+  });
+
+  return Array.from(map.values());
+}
+
 let allRows = [];
 let filteredRows = [];
 let currentPage = 1;
@@ -1037,7 +1122,7 @@ function parseFile(file) {
         });
       }
 
-      allRows = rows;
+      allRows = deduplicateBookings(rows);
       hideLoading();
       renderPreview();
       setStatus('active', true);
@@ -1065,6 +1150,16 @@ function renderPreview() {
   document.getElementById('statSpaces').textContent = new Set(allRows.map(r => r.SpaceName)).size;
   document.getElementById('statDietary').textContent = allRows.filter(r => r.HasDietary).length;
   document.getElementById('statAccess').textContent = allRows.filter(r => r.HasAccessibility).length;
+
+  const mergedCount = allRows.filter(r => r._merged).length;
+  document.getElementById('statMerged').textContent = mergedCount || '–';
+  const summaryEl = document.getElementById('mergeSummary');
+  if (mergedCount > 0) {
+    summaryEl.innerHTML = `<strong>${mergedCount} duplicate ${mergedCount === 1 ? 'booking' : 'bookings'} merged</strong> — covers combined, dietary and accessibility flags carried forward. Highlighted rows below.`;
+    summaryEl.classList.add('show');
+  } else {
+    summaryEl.classList.remove('show');
+  }
   document.getElementById('statsStrip').classList.add('show');
 
   // Space filter
@@ -1119,8 +1214,8 @@ function renderTable() {
 
   const tbody = document.getElementById('previewBody');
   tbody.innerHTML = pageRows.map(r => `
-    <tr>
-      <td>${esc(r.BookingName)}</td>
+    <tr class="${r._merged ? 'merged-row' : ''}">
+      <td>${esc(r.BookingName)}${r._merged ? `<span class="merge-badge">Merged ${r._mergeCount}×</span>` : ''}</td>
       <td><span class="space-badge${r.SpaceName.startsWith('UNMAPPED') ? ' unmapped' : ''}">${esc(r.SpaceName)}</span></td>
       <td><span class="covers-num">${r.Covers}</span></td>
       <td>
@@ -1205,7 +1300,14 @@ async function runImport() {
     const res = await fetch(FLOW_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookings: allRows })
+      body: JSON.stringify({
+        bookings: allRows.map(r => {
+          const clean = Object.assign({}, r);
+          delete clean._merged;
+          delete clean._mergeCount;
+          return clean;
+        })
+      })
     });
     const data = await res.json();
     hideLoading();
