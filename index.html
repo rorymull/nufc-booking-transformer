@@ -1353,7 +1353,7 @@ async function runImport() {
     if (res.ok) {
       showResult(true,
         `Import complete`,
-        `<span>${data.imported || allRows.length}</span> imported · <span>${data.skipped || 0}</span> skipped · <span>${data.errors || 0}</span> errors`
+        `<span>${data.imported ?? allRows.length}</span> imported · <span>${data.skipped ?? 0}</span> skipped · <span>${data.errors ?? 0}</span> errors`
       );
       document.getElementById('step3').classList.add('done');
       setStatus('Import complete', true);
