@@ -965,14 +965,46 @@ const SPACE_MAP = {
   "Hospitality - Director's Guest Lounge": "DIRECTORS GUEST LOUNGE",
   '1892 Hospitality Adult': '1892 CLUB',
   '1892 Child Hospitality': '1892 CLUB',
+  // 26/27 price types
+  'Hospitality - Tidings Leazes - Adult': 'TIDINGS',
+  'Hosp - Milburn Box L5 - Adult': 'LEVEL 5 BOXES',
+  'Hosp - Milburn Box L6 - Adult': 'LEVEL 6 BOXES',
+  'Hospitality - Four Corners Adult': 'FOUR CORNERS',
+  'Hospitality - Moncur Child': 'MONCUR SUITE',
+  'Hospitality - Seymours - CCCE': 'SEYMOURS',
+  'Hospitality - Seymours - BPSE': 'SEYMOURS',
 };
+
+// Fallback for new price types: first keyword found in the price type wins (order matters)
+const SPACE_KEYWORDS = [
+  ['milburn box l6', 'LEVEL 6 BOXES'], ['milburn box l5', 'LEVEL 5 BOXES'], ['milburn', 'LEVEL 5 BOXES'],
+  ['sw box', 'SW BOX'], ['leazes box', 'LEAZES BOX'],
+  ['tidings', 'TIDINGS'], ['magpie club', 'TIDINGS'],
+  ['seymours', 'SEYMOURS'], ['entertainers', 'SEYMOURS'],
+  ['icons', 'ICONS'], ['heroes', 'ICONS'],
+  ['stelrad', 'IDEAL STELRAD'], ['four corners', 'FOUR CORNERS'], ['park grill', 'PARK GRILL'],
+  ['wings', 'WINGS'], ['rooftops', 'ROOFTOPS'], ['the nest', 'THE NEST'], ['moncur', 'MONCUR SUITE'],
+  ['joe harvey', 'JOE HARVEY SUITE'], ['sir bobby', 'SIR BOBBY ROBSON SUITE'], ['club st james', 'CLUB ST JAMES'],
+  ['csj', 'CLUB ST JAMES'], ['barracks', 'THE BARRACKS'], ['partner', 'PARTNERS LOUNGE'],
+  ['dgl', 'DIRECTORS GUEST LOUNGE'], ["director", 'DIRECTORS GUEST LOUNGE'], ['chairman', "CHAIRMAN'S SUITE"],
+  ['shearers', 'SHEARERS BAR'], ['1892', '1892 CLUB'], ['3sixty', '3SIXTY'], ['gaucho', 'GAUCHO'], ['chaophraya', 'CHAOPHRAYA'],
+];
+function mapSpace(priceType) {
+  if (SPACE_MAP[priceType]) return SPACE_MAP[priceType];
+  const p = priceType.toLowerCase();
+  const hit = SPACE_KEYWORDS.find(([k]) => p.includes(k));
+  return hit ? hit[1] : 'UNMAPPED: ' + priceType;
+}
 
 const NEGATIVES = new Set(['','n','no','n/a','na','none','n./a','n?a','nn','0','not aware at time of booking','null']);
 
+// Answers that mean "nothing" (but keeps real ones like "No nuts" or "No seafood")
+const NEGATIVE_PATTERN = /^(no+|non|nono|nil+|ni|nine|none|nothing|nope|n\.?\/?a\.?|not applicab\w*|not required|no (dietary |special |access(ibility)? )?(requirements?|needs|allergies|issues)|no allergies|-+|x)[.!]*$/i;
+
 function cleanField(val) {
   if (val === null || val === undefined) return '';
-  const s = String(val).trim();
-  return NEGATIVES.has(s.toLowerCase()) ? '' : s;
+  const s = String(val).replace(/\s+/g, ' ').trim();
+  return (NEGATIVES.has(s.toLowerCase()) || NEGATIVE_PATTERN.test(s)) ? '' : s;
 }
 
 function isPositive(val) { return cleanField(val) !== ''; }
@@ -996,19 +1028,19 @@ function deduplicateBookings(rows) {
       // Merge dietary — OR the flags, concatenate notes
       if (row.HasDietary) {
         existing.HasDietary = true;
-        existing.DietaryRequirements = [
+        existing.DietaryRequirements = [...new Set([
           existing.DietaryRequirements,
           row.DietaryRequirements
-        ].filter(Boolean).join('; ');
+        ].filter(Boolean))].join('; ');
       }
 
       // Merge accessibility — same pattern
       if (row.HasAccessibility) {
         existing.HasAccessibility = true;
-        existing.AccessibilityNeeds = [
+        existing.AccessibilityNeeds = [...new Set([
           existing.AccessibilityNeeds,
           row.AccessibilityNeeds
-        ].filter(Boolean).join('; ');
+        ].filter(Boolean))].join('; ');
       }
 
       existing._merged = true;
@@ -1107,7 +1139,7 @@ function parseFile(file) {
         if (!crmId || !String(crmId).trim().match(/^\d+$/)) continue;
 
         const priceType = String(row[iPriceType] || '').trim();
-        const spaceName = SPACE_MAP[priceType] || ('UNMAPPED: ' + priceType);
+        const spaceName = mapSpace(priceType);
         const dietary   = cleanField(row[iDietary]);
         const access    = cleanField(row[iAccess]);
 
